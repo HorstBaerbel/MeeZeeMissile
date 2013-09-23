@@ -152,6 +152,7 @@ MissileControl::MissileControl()
 
 void * MissileControl::controlLoop(void * obj)
 {
+    LauncherCommand lastCommand = NONE;
 	MissileControl * control = reinterpret_cast<MissileControl *>(obj);
 	//start thread loop
 	while (control != nullptr && control->active) {
@@ -167,36 +168,39 @@ void * MissileControl::controlLoop(void * obj)
 			if (control->currentRemainingTime != INT_MIN && control->currentRemainingTime > 0) {
 				control->currentRemainingTime -= controlInterval;
 			}
-			//copy command sequences to command buffer
-			uint8_t commandBuffer[64];
-			memset(commandBuffer, 0, sizeof(commandBuffer));		
-			memcpy(commandBuffer, sequences[control->currentCommand], 8);
-			//send command to device
-			int errnum = 0;
-			if (control->launcherInfo.model == LAUNCHER_M_S) {
-				//needed for M&S launchers
-				if ((errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITA, sizeof(SEQUENCE_INITA), usbControlTimeout) <= 0) ||
-					(errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITB, sizeof(SEQUENCE_INITB), usbControlTimeout) <= 0) ||
-					(errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, commandBuffer, 64, usbControlTimeout) <= 0)) {
-				    //                                                   0x21,                      0x09,               0x02, 0x01
-						std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
-						control->currentCommand = NONE;
-						control->currentRemainingTime = INT_MIN;
-				}
-			}
-			else if (control->launcherInfo.model == LAUNCHER_CHEEKY) {
-				//sufficient for Dream Cheeky launchers
-				if (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x00, commandBuffer, 8, usbControlTimeout) <= 0) {
-					std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
-					control->currentCommand = NONE;
-					control->currentRemainingTime = INT_MIN;
-				}
+			if (control->currentCommand != lastCommand) {
+			    //copy command sequences to command buffer
+			    uint8_t commandBuffer[64];
+			    memset(commandBuffer, 0, sizeof(commandBuffer));		
+			    memcpy(commandBuffer, sequences[control->currentCommand], 8);
+			    //send command to device
+			    int errnum = 0;
+			    if (control->launcherInfo.model == LAUNCHER_M_S) {
+				    //needed for M&S launchers
+				    if ((errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITA, sizeof(SEQUENCE_INITA), usbControlTimeout) <= 0) ||
+					    (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITB, sizeof(SEQUENCE_INITB), usbControlTimeout) <= 0) ||
+					    (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, commandBuffer, 64, usbControlTimeout) <= 0)) {
+				        //                                                   0x21,                      0x09,               0x02, 0x01
+						    std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
+						    control->currentCommand = NONE;
+						    control->currentRemainingTime = INT_MIN;
+				    }
+			    }
+			    else if (control->launcherInfo.model == LAUNCHER_CHEEKY) {
+				    //sufficient for Dream Cheeky launchers
+				    if (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x00, commandBuffer, 8, usbControlTimeout) <= 0) {
+					    std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
+					    control->currentCommand = NONE;
+					    control->currentRemainingTime = INT_MIN;
+				    }
+			    }
 			}
 			//if the command was to fire or stop, switch command to NONE
 			if (control->currentCommand == STOP || control->currentCommand == FIRE) {
 				control->currentCommand = NONE;
 				control->currentRemainingTime = INT_MIN;
 			}
+			lastCommand = control->currentCommand;
 		}
 		//unlock mutex again
 		pthread_mutex_unlock(&control->mutex);
