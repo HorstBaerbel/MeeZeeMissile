@@ -1,5 +1,6 @@
 #include <unistd.h>
 #include <string.h>
+#include <memory>
 
 #include "consolestyle.h"
 #include "motiondetector.h"
@@ -8,14 +9,26 @@
 #include "framebuffer.h"
 
 
+const char * OPENCV_WINDOW_NAME = "Frame";
+std::string inputDevice;
+int cameraIndex = 0;
+std::string videoFile = "";
+bool drawToFramebuffer = false;
+bool drawUsingOpenCV = false;
+std::shared_ptr<Framebuffer> frameBuffer;
+cv::Mat frame;
+cv::Mat converted;
+
+
 void printUsage()
 {
     std::cout << "Command line options:" << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "-c <INDEX>" << ConsoleStyle() << " - Capture from INDEXth camera." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "-f <FILE>" << ConsoleStyle() << " - Capture from video FILE." << std::endl;
-    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "-d" << ConsoleStyle() << " - Display video frames in framebuffer." << std::endl;
-    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "-k" << ConsoleStyle() << " <DEVICE> - Use keyboard DEVICE e.g. \"/dev/input/event3\"" << std::endl;
-    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "? or --help" << ConsoleStyle() << " - This help." << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "-df" << ConsoleStyle() << " - Display video frames in console framebuffer." << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "-do" << ConsoleStyle() << " - Display video frames using OpenCV." << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "-k <DEVICE>" << ConsoleStyle() << " - Use keyboard DEVICE e.g. \"/dev/input/event3\"" << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "? or --help" << ConsoleStyle() << " - Show this help." << std::endl;
     std::cout << "Available keys:" << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "Cursor keys" << ConsoleStyle() << " - Control launcher." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "SPACE" << ConsoleStyle() << " - Stop launcher." << std::endl;
@@ -23,15 +36,8 @@ void printUsage()
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "ESC" << ConsoleStyle() << " - Quit program." << std::endl;
 }
 
-int main(int argc, char * argv[])
+bool parseCommandLine(int argc, char * argv[])
 {
-    std::string inputDevice;
-    int cameraIndex = 0;
-    std::string videoFile = "";
-    bool drawFrames = false;
-
-    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "MeeZeeMissile v0.8 - Motion detection and USB launcher control." << ConsoleStyle() << std::endl;
-
     //parse command line arguments
     for(int i = 1; i < argc; ++i) {
         //read argument from list
@@ -40,7 +46,7 @@ int main(int argc, char * argv[])
         if (argument == "?" || argument == "--help") {
             //print help
             printUsage();
-            return 0;
+            return false;
         }
         else if (argument == "-k") {
             //read keyboard input device from next argument
@@ -50,7 +56,7 @@ int main(int argc, char * argv[])
             else {
                 std::cout << ConsoleStyle(ConsoleStyle::RED) << "Option -k needs an argument!" << ConsoleStyle() << std::endl;
                 printUsage();
-                return -1;
+                return false;
             }
         }
         else if (argument == "-c") {
@@ -62,7 +68,7 @@ int main(int argc, char * argv[])
             else {
                 std::cout << ConsoleStyle(ConsoleStyle::RED) << "Option -c needs an argument!" << ConsoleStyle() << std::endl;
                 printUsage();
-                return -1;
+                return false;
             }
         }
         else if (argument == "-f") {
@@ -73,17 +79,39 @@ int main(int argc, char * argv[])
             else {
                 std::cout << ConsoleStyle(ConsoleStyle::RED) << "Option -f needs an argument!" << ConsoleStyle() << std::endl;
                 printUsage();
-                return -1;
+                return false;
             }
         }
-        else if (argument == "-d") {
-            //enable drawing of camera/video frames
-            drawFrames = true;
+        else if (argument == "-df") {
+            //enable drawing of camera/video frames to console framebuffer
+            if (drawUsingOpenCV) {
+                std::cout << ConsoleStyle(ConsoleStyle::RED) << "-df and -do are mutually exclusive!" << ConsoleStyle() << std::endl;
+                return false;
+            }
+            drawToFramebuffer = true;
+        }
+        else if (argument == "-do") {
+            //enable drawing of camera/video frames with OpenCV
+            if (drawToFramebuffer) {
+                std::cout << ConsoleStyle(ConsoleStyle::RED) << "-do and -df are mutually exclusive!" << ConsoleStyle() << std::endl;
+                return false;
+            }
+            drawUsingOpenCV = true;
         }
         else {
             std::cout << ConsoleStyle(ConsoleStyle::RED) << "Error: Unknown argument \"" << argument << "\"!" << ConsoleStyle() << std::endl;
-            return -1;
+            return false;
         }
+    }
+    return true;
+}
+
+int main(int argc, char * argv[])
+{
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "MeeZeeMissile v0.8 - Motion detection and USB launcher control." << ConsoleStyle() << std::endl;
+    
+    if (!parseCommandLine(argc, argv)) {
+        return -1;
     }
 
     //check for proper priviliges
@@ -95,7 +123,7 @@ int main(int argc, char * argv[])
     //initialize interfaces
     Keyboard keyboard(inputDevice);
     if (!keyboard.isAvailable()) {
-    std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to initialize keyboard interface!" << ConsoleStyle() << std::endl;
+        std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to initialize keyboard interface!" << ConsoleStyle() << std::endl;
         return -3;
     }
     MotionDetector motionDetector;
@@ -111,19 +139,23 @@ int main(int argc, char * argv[])
             return -4;
         }
     }
-    Framebuffer frameBuffer;
-	if (!frameBuffer.isAvailable()) {
-		std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to initialize framebuffer!" << ConsoleStyle() << std::endl;
-		return -5;
+    //if the user wants to draw to framebuffer, create one
+    if (drawToFramebuffer) {
+        frameBuffer = std::make_shared<Framebuffer>();
+	    if (!frameBuffer->isAvailable()) {
+		    std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to initialize framebuffer!" << ConsoleStyle() << std::endl;
+		    return -5;
+	    }
+	}
+	if (drawUsingOpenCV) {
+	    //create window
+	    cv::namedWindow(OPENCV_WINDOW_NAME);
 	}
 	/*MissileControl missileControl;
 	if (!missileControl.isAvailable()) {
 		std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to initialize missile control!" << ConsoleStyle() << std::endl;
 		return -6;
 	}*/
-
-    cv::Mat frame;
-    cv::Mat converted;
 
     //start detection and control loop
 	while (keyboard.isAvailable()) // && motionDetector.isAvailable())
@@ -149,16 +181,22 @@ int main(int argc, char * argv[])
 		else if (keyboard.isKeyDown(28)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::FIRE);
 		}*/
-		MotionDetector::MotionInformation motionInfo;
+		/*MotionDetector::MotionInformation motionInfo;
 		if (motionDetector.getLastMotion(motionInfo) && motionInfo.motionDetected) {
 		    std::cout << "Motion at (" << motionInfo.cx << "," << motionInfo.cy << ")." << std::endl;
-		}
-        if (drawFrames) {
+		}*/
+        if (drawToFramebuffer && frameBuffer->isAvailable()) {
             if (motionDetector.getLastFrame(frame, true) && !frame.empty()) {
                 //convert frame to screen depth
                 MotionDetector::convertFrame(converted, frame, CV_8U);
                 //draw frame to screen
-                frameBuffer.drawBuffer(frameBuffer.getWidth() - converted.size().width, 0, converted.ptr<const unsigned char>(), converted.size().width, converted.size().height, 24);
+                frameBuffer->drawBuffer(frameBuffer->getWidth() - converted.size().width, 0, converted.ptr<const unsigned char>(), converted.size().width, converted.size().height, 24);
+            }
+        }
+        if (drawUsingOpenCV) {
+            if (motionDetector.getLastFrame(frame, true) && !frame.empty()) {
+                cv::imshow(OPENCV_WINDOW_NAME, frame);
+                cv::waitKey(10);
             }
         }
 	}
