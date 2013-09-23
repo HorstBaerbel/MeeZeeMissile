@@ -13,9 +13,9 @@
 
 MotionDetector::MotionDetector()
 	: motionChanged(false),
-	  thread(0), mutex(PTHREAD_MUTEX_INITIALIZER), active(false), 
+	  thread(0), mutex(PTHREAD_MUTEX_INITIALIZER), active(false), paused(false),
 	  videoWidth(0), videoHeight(0), videoFps(0.0), videoBitsPerColor(0), videoColors(0),
-      pollingInterval(0), frameNr(0), frameChanged(false),
+      pollingInterval(0), frameNr(0), framesToIgnore(0), frameChanged(false),
       useMorphology(false)
 {
 }
@@ -85,6 +85,8 @@ bool MotionDetector::setupCapture(cv::VideoCapture & captureDevice, uint32_t wid
 		std::cout << ConsoleStyle(ConsoleStyle::GREEN) << "Capturing at " << videoWidth << "x" << videoHeight << "@" << videoBitsPerColor * videoColors << "bpp with " << videoFps << " frames/s now." << ConsoleStyle() << std::endl;
 		//calculate polling interval. It's a bit less than the frame interval, to not skip any frames
 		pollingInterval = 1000.0 / videoFps * 0.9;
+		//calculate the number of frames to ignore before starting detection
+        framesToIgnore = 1.0 * videoFps;
 		//set up images needed for motion detection
 		const cv::Size imageSize(videoWidth, videoHeight);
 		greyFrame = cv::Mat(imageSize, CV_8U);
@@ -109,6 +111,20 @@ bool MotionDetector::setupCapture(cv::VideoCapture & captureDevice, uint32_t wid
 		captureDevice.release();
 	}
     return false;
+}
+
+void MotionDetector::pauseDetection(bool pause)
+{
+    paused = pause;
+    //if the detection was unpaused, clear the number of frames to clear the average start over with a fresh frame
+    if (!paused) {
+        frameNr = 0;
+    }
+}
+
+bool MotionDetector::isPaused() const
+{
+    return paused;
 }
 
 bool MotionDetector::isAvailable() const
@@ -160,6 +176,14 @@ bool MotionDetector::getLastFrame(cv::Mat & lastFrame, bool drawMotion)
 		//overlay frame motion rect if caller wants to and if motion was detected
 		if (drawMotion && lastMotion.motionDetected) {
 			cv::rectangle(lastFrame, cv::Point(lastMotion.x, lastMotion.y), cv::Point(lastMotion.x + lastMotion.w, lastMotion.y + lastMotion.h), CV_RGB(255, 0, 0));
+			//mark center of motion
+			cv::line(lastFrame, cv::Point(lastMotion.cx - 3, lastMotion.cy), cv::Point(lastMotion.cx + 3, lastMotion.cy), CV_RGB(255, 0, 0));
+			cv::line(lastFrame, cv::Point(lastMotion.cx, lastMotion.cy - 3), cv::Point(lastMotion.cx, lastMotion.cy + 3), CV_RGB(255, 0, 0));
+			//mark center of frame
+			const int cx = lastFrame.size().width / 2;
+			const int cy = lastFrame.size().height / 2;
+			cv::line(lastFrame, cv::Point(cx - 3, cy), cv::Point(cx + 3, cy), CV_RGB(0, 255, 0));
+			cv::line(lastFrame, cv::Point(cx, cy - 3), cv::Point(cx, cy + 3), CV_RGB(0, 255, 0));
 		}
 		frameChanged = false;
 		result = true;
@@ -178,10 +202,10 @@ void * MotionDetector::frameLoop(void * obj)
 	MotionDetector * detector = reinterpret_cast<MotionDetector *>(obj);
 	//start thread loop
     while (detector != nullptr && detector->active) {
+	    //block mutex for member variables
+    	pthread_mutex_lock(&detector->mutex);
 		//grab frame from camera/video if there are any
-		if (detector->videoCapture.grab()) {
-		    //block mutex for member variables
-        	pthread_mutex_lock(&detector->mutex);
+		if (!detector->paused && detector->videoCapture.grab()) {
 			//frame's there, retrieve it
 			if (detector->videoCapture.retrieve(detector->frame)) {
 #ifdef DO_TIMING
@@ -194,26 +218,26 @@ void * MotionDetector::frameLoop(void * obj)
 				if (detector->frameNr++ == 0) {
 					//on first frame only copy image to running average
 					detector->greyFrame.convertTo(detector->movingAverage, CV_32F);//, 1.0, 0.0);
-					//unlock mutex again
-        			pthread_mutex_unlock(&detector->mutex);
-					continue;
+				}
+				else if (detector->frameNr < detector->framesToIgnore) {
+				    //accumulate frames, but nothing more
+					cv::accumulateWeighted(detector->greyFrame, detector->movingAverage, 0.10);
 				}
 				else {
 					//accumulate frames
-					cv::accumulateWeighted(detector->greyFrame, detector->movingAverage, 0.050);
+					cv::accumulateWeighted(detector->greyFrame, detector->movingAverage, 0.020);
 					//convert moving average back to 8bit
 					detector->movingAverage.convertTo(detector->averageGrey, CV_8U);
 					//calculate difference between average and current frame
 					cv::absdiff(detector->averageGrey, detector->greyFrame, detector->difference);
 					//convert to binary image
-					cv::threshold(detector->difference, detector->difference, 50.0, 255.0, CV_THRESH_BINARY);
+					cv::threshold(detector->difference, detector->difference, 70.0, 255.0, CV_THRESH_BINARY);
 					//use different paths if the user wants to use morphology functions
 					std::vector<std::vector<cv::Point>> contours;
 					std::vector<cv::Vec4i> hierarchy;
 					if (detector->useMorphology) {
 						//perform morphological close operation to fill in the gaps in the binary image
 						//cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(10, 10));
-						//cv::morphologyEx(greyFrame, greyFrame, cv::MORPH_CLOSE, element, cv::Point(-1, -1), 8);
 						cv::morphologyEx(detector->difference, detector->difference, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1, -1), 8);
 						//create contours from binary image
 						cv::findContours(detector->difference, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
@@ -237,7 +261,7 @@ void * MotionDetector::frameLoop(void * obj)
 						}
 					}
 					//store biggest contour if one exists
-					if (biggestContour != contours.cend()) {
+					if (biggestContour != contours.cend() && biggestRect.area() > 40) {
 						detector->lastMotion.motionDetected = true;
 						detector->lastMotion.x = biggestRect.x;
 						detector->lastMotion.y = biggestRect.y;
@@ -245,6 +269,10 @@ void * MotionDetector::frameLoop(void * obj)
 						detector->lastMotion.h = biggestRect.height;
 						detector->lastMotion.cx = biggestRect.x + biggestRect.width / 2;
 						detector->lastMotion.cy = biggestRect.y + biggestRect.height / 2;
+						//calculate distance to frame center
+                        int dx = (detector->frame.size().width / 2 - detector->lastMotion.cx);
+                        int dy = (detector->frame.size().height / 2 - detector->lastMotion.cy);
+                        detector->lastMotion.distance2 = dx * dx + dy * dy;
 					}
 					else {
 						detector->lastMotion.motionDetected = false;
@@ -263,9 +291,9 @@ void * MotionDetector::frameLoop(void * obj)
                 }
 #endif
 			}
-			//unlock mutex again
-			pthread_mutex_unlock(&detector->mutex);
 		}
+		//unlock mutex again
+		pthread_mutex_unlock(&detector->mutex);
 		//sleep between polling camera frames
 		usleep(detector->pollingInterval * 1000);
 	}

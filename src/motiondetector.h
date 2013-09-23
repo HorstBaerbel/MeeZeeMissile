@@ -12,17 +12,18 @@ public:
 	struct MotionInformation
 	{
 		bool motionDetected;
-		uint32_t x;
-		uint32_t y;
-		uint32_t cx;
-		uint32_t cy;
-		uint32_t w;
-		uint32_t h;
+		uint32_t x; //!<upper left position
+		uint32_t y; //!<upper left position
+		uint32_t cx; //!<center x
+		uint32_t cy; //!<center y
+		uint32_t w; //!<width
+		uint32_t h; //!<height
+		uint32_t distance2; //!<squared distance of motion center to frame center
 
 		MotionInformation()
-			: x(0), y(0), w(0), h(0), cx(0), cy(0), motionDetected(false) {};
+			: x(0), y(0), w(0), h(0), cx(0), cy(0), distance2(0), motionDetected(false) {};
 		MotionInformation(uint32_t px, uint32_t py, uint32_t width, uint32_t height)
-			: x(px), y(py), w(width), h(height), cx(x + w / 2), cy(y + h / 2), motionDetected(false) {};
+			: x(px), y(py), w(width), h(height), cx(x + w / 2), cy(y + h / 2), distance2(0), motionDetected(false) {};
 	};
 
 private:
@@ -32,6 +33,7 @@ private:
 	pthread_t thread; //!<frame polling thread
 	pthread_mutex_t mutex; //!<The mutex protecting the lastMotion and motionChanged members
 	bool active; //!<flags to keep the thread running or stop it
+	bool paused; //!<Flag to pause motion detection loop. No detection will be done till flas is false.
 
 	cv::VideoCapture videoCapture; //!<OpenCV video capture object
 	uint32_t videoWidth; //!<Width of video frames
@@ -41,6 +43,7 @@ private:
 	double videoFps; //!<Fps of video capture
 	uint32_t pollingInterval; //!<Time to sleep between polling frames
 	uint32_t frameNr; //!<Nr of frame captured from device.
+	uint32_t framesToIgnore; //!<Nr of frames ignore after starting or unpausing motion detection.
 
 	bool frameChanged; //!<True if the frame has changed from the last getLastFrame() call
 	cv::Mat frame; //!<Last captured frame
@@ -80,6 +83,17 @@ public:
     \note You can not rely on the width/height/fps you passed being used as the actual mode! Always check!
     */
     bool openCamera(int cameraIndex = 0, uint32_t width = 320, uint32_t height = 240, double fps = 20.0);
+    
+    /*!
+    Pause motion detection loop. No more frames will be analyzed till it is unpaused.
+    \param[in] pause Pass true to pause motion detection loop.
+    */
+    void pauseDetection(bool pause);
+    
+    /*!
+    Check if motion detection is currently paused.
+    */
+    bool isPaused() const;
 
     /*!
     Check if the motion detector is ready to be used.

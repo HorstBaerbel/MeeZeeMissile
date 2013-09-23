@@ -15,6 +15,7 @@ int cameraIndex = 0;
 std::string videoFile = "";
 bool drawToFramebuffer = false;
 bool drawUsingOpenCV = false;
+bool armed = true;
 std::shared_ptr<Framebuffer> frameBuffer;
 cv::Mat frame;
 cv::Mat converted;
@@ -33,6 +34,7 @@ void printUsage()
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "Cursor keys" << ConsoleStyle() << " - Control launcher." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "SPACE" << ConsoleStyle() << " - Stop launcher." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "ENTER" << ConsoleStyle() << " - Fire launcher." << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "1/0" << ConsoleStyle() << " - Arm/unarm launcher." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "ESC" << ConsoleStyle() << " - Quit program." << std::endl;
 }
 
@@ -151,11 +153,11 @@ int main(int argc, char * argv[])
 	    //create window
 	    cv::namedWindow(OPENCV_WINDOW_NAME);
 	}
-	/*MissileControl missileControl;
+	MissileControl missileControl;
 	if (!missileControl.isAvailable()) {
 		std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to initialize missile control!" << ConsoleStyle() << std::endl;
 		return -6;
-	}*/
+	}
 
     //start detection and control loop
 	while (keyboard.isAvailable()) // && motionDetector.isAvailable())
@@ -163,28 +165,32 @@ int main(int argc, char * argv[])
 		if (keyboard.isKeyDown(1)) {
 			break;
 		}
-		/*else if (keyboard.isKeyDown(105)) {
-		    missileControl.executeCommand(MissileControl::LauncherCommand::LEFT, 100);
+		else if (keyboard.isKeyDown(2) && !armed) {
+		    std::cout << "Launcher armed!" << std::endl;
+			armed = true;
+		}
+		else if (keyboard.isKeyDown(11) && armed) {
+		    std::cout << "Launcher unarmed!" << std::endl;
+			armed = false;
+		}
+		else if (keyboard.isKeyDown(105)) {
+		    missileControl.executeCommand(MissileControl::LauncherCommand::LEFT, 250);
 		}
 		else if (keyboard.isKeyDown(106)) {
-		    missileControl.executeCommand(MissileControl::LauncherCommand::RIGHT, 100);
+		    missileControl.executeCommand(MissileControl::LauncherCommand::RIGHT, 250);
 		}
 		else if (keyboard.isKeyDown(103)) {
-		    missileControl.executeCommand(MissileControl::LauncherCommand::UP, 100);
+		    missileControl.executeCommand(MissileControl::LauncherCommand::UP, 250);
 		}
 		else if (keyboard.isKeyDown(108)) {
-		    missileControl.executeCommand(MissileControl::LauncherCommand::DOWN, 100);
+		    missileControl.executeCommand(MissileControl::LauncherCommand::DOWN, 250);
 		}
 		else if (keyboard.isKeyDown(57)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::STOP);
 		}
 		else if (keyboard.isKeyDown(28)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::FIRE);
-		}*/
-		/*MotionDetector::MotionInformation motionInfo;
-		if (motionDetector.getLastMotion(motionInfo) && motionInfo.motionDetected) {
-		    std::cout << "Motion at (" << motionInfo.cx << "," << motionInfo.cy << ")." << std::endl;
-		}*/
+		}
         if (drawToFramebuffer && frameBuffer->isAvailable()) {
             if (motionDetector.getLastFrame(frame, true) && !frame.empty()) {
                 //convert frame to screen depth
@@ -197,6 +203,19 @@ int main(int argc, char * argv[])
             if (motionDetector.getLastFrame(frame, true) && !frame.empty()) {
                 cv::imshow(OPENCV_WINDOW_NAME, frame);
                 cv::waitKey(10);
+            }
+        }
+        //check if the missile launcher is directed at the center of the motion
+        MotionDetector::MotionInformation motionInfo;
+        if (motionDetector.getLastMotion(motionInfo) && motionInfo.motionDetected) {
+            if (motionInfo.distance2 < 30) {
+                if (armed) {
+                    std::cout << "Motion close to target. Shooting!" << std::endl;
+                    missileControl.executeCommand(MissileControl::LauncherCommand::FIRE);
+                }
+                else {
+                    std::cout << "Motion close to target, but unarmed." << std::endl;
+                }
             }
         }
 	}
