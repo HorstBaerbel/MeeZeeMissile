@@ -3,6 +3,11 @@
 #include <iostream>
 #include <unistd.h>
 
+//#define DO_TIMING
+#ifdef DO_TIMING
+    #include <time.h>
+#endif
+
 #include "consolestyle.h"
 
 
@@ -175,43 +180,50 @@ void * MotionDetector::frameLoop(void * obj)
     while (detector != nullptr && detector->active) {
 		//grab frame from camera/video if there are any
 		if (detector->videoCapture.grab()) {
+		    //block mutex for member variables
+        	pthread_mutex_lock(&detector->mutex);
 			//frame's there, retrieve it
 			if (detector->videoCapture.retrieve(detector->frame)) {
-                //std::cout << "Frame " << detector->frameNr << std::endl;
+#ifdef DO_TIMING
+                timespec startTime;
+                clock_gettime(CLOCK_THREAD_CPUTIME_ID, &startTime);
+#endif
 				//convert image to greyscale
-				cv::cvtColor(detector->frame, detector->greyFrame, CV_RGB2GRAY);
+				cv::cvtColor(detector->frame, detector->greyFrame, CV_BGR2GRAY);
 				//check if first frame
 				if (detector->frameNr++ == 0) {
 					//on first frame only copy image to running average
 					detector->greyFrame.convertTo(detector->movingAverage, CV_32F);//, 1.0, 0.0);
+					//unlock mutex again
+        			pthread_mutex_unlock(&detector->mutex);
 					continue;
 				}
 				else {
 					//accumulate frames
-					cv::accumulateWeighted(detector->greyFrame, detector->movingAverage, 0.020);
+					cv::accumulateWeighted(detector->greyFrame, detector->movingAverage, 0.050);
 					//convert moving average back to 8bit
 					detector->movingAverage.convertTo(detector->averageGrey, CV_8U);
 					//calculate difference between average and current frame
 					cv::absdiff(detector->averageGrey, detector->greyFrame, detector->difference);
 					//convert to binary image
-					cv::threshold(detector->greyFrame, detector->greyFrame, 70.0, 255.0, CV_THRESH_BINARY);
+					cv::threshold(detector->difference, detector->difference, 50.0, 255.0, CV_THRESH_BINARY);
 					//use different paths if the user wants to use morphology functions
 					std::vector<std::vector<cv::Point>> contours;
 					std::vector<cv::Vec4i> hierarchy;
 					if (detector->useMorphology) {
 						//perform morphological close operation to fill in the gaps in the binary image
 						//cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(10, 10));
-						//cv::morphologyEx(greyFrame, greyFrame, cv::MORPH_CLOSE, element, cv::Point(-1, -1), 5);
-						cv::morphologyEx(detector->greyFrame, detector->greyFrame, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1, -1), 5);
+						//cv::morphologyEx(greyFrame, greyFrame, cv::MORPH_CLOSE, element, cv::Point(-1, -1), 8);
+						cv::morphologyEx(detector->difference, detector->difference, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1, -1), 8);
 						//create contours from binary image
-						cv::findContours(detector->greyFrame, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+						cv::findContours(detector->difference, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
 					}
 					else {
 						//dilate and erode to get better blobs in the binary image
-						cv::dilate(detector->greyFrame, detector->greyFrame, cv::Mat(), cv::Point(-1, -1), 18);
-						cv::erode(detector->greyFrame, detector->greyFrame, cv::Mat(), cv::Point(-1, -1), 10);
+						cv::dilate(detector->difference, detector->difference, cv::Mat(), cv::Point(-1, -1), 12);
+						cv::erode(detector->difference, detector->difference, cv::Mat(), cv::Point(-1, -1), 8);
 						//create contours from binary image
-						cv::findContours(detector->greyFrame, contours, hierarchy, CV_RETR_CCOMP, CV_CHAIN_APPROX_SIMPLE);
+						cv::findContours(detector->difference, contours, hierarchy, CV_RETR_EXTERNAL/*CV_RETR_CCOMP*/, CV_CHAIN_APPROX_SIMPLE);
 					}
 					//analyze contours and find biggest contour
 					cv::Rect biggestRect;
@@ -224,8 +236,6 @@ void * MotionDetector::frameLoop(void * obj)
 							biggestContour = cIt;
 						}
 					}
-					//block mutex for copying to members
-					pthread_mutex_lock(&detector->mutex);
 					//store biggest contour if one exists
 					if (biggestContour != contours.cend()) {
 						detector->lastMotion.motionDetected = true;
@@ -241,10 +251,20 @@ void * MotionDetector::frameLoop(void * obj)
 					}
 					detector->motionChanged = true;
 					detector->frameChanged = true;
-					//unlock mutex again
-					pthread_mutex_unlock(&detector->mutex);
 				}
+#ifdef DO_TIMING
+                timespec endTime;
+                clock_gettime(CLOCK_THREAD_CPUTIME_ID, &endTime);
+                static float miliseconds = 0;
+                miliseconds += (endTime.tv_nsec - startTime.tv_nsec) / (1000.0f * 1000.0f);
+                if (detector->frameNr % 10 == 0) {
+                    std::cout << "Processing time " << miliseconds / 10.0f << "ms." << std::endl;
+                    miliseconds = 0;
+                }
+#endif
 			}
+			//unlock mutex again
+			pthread_mutex_unlock(&detector->mutex);
 		}
 		//sleep between polling camera frames
 		usleep(detector->pollingInterval * 1000);
@@ -265,3 +285,4 @@ MotionDetector::~MotionDetector()
 	motionChanged = false;
 	frameChanged = false;
 }
+
