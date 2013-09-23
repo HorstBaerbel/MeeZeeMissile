@@ -112,29 +112,57 @@ void Framebuffer::drawBuffer(uint32_t x, uint32_t y, const unsigned char * data,
             data += srcLineLength;
         }
     }
-    else if (currentMode.bits_per_pixel == 32 && bpp == 24) {
-        for (int line = 0; line < height; ++line) {
-            uint32_t * destLine = (uint32_t *)dest;
-            const unsigned char * srcLine = data;
-            for (int pixel = 0; pixel < width; ++pixel, destLine++, srcLine += 3) {
-                *destLine = srcLine[3] << 24 | srcLine[2] << 16 | srcLine[1] << 8 | 0xff; //rgba
+    else if (currentMode.bits_per_pixel == 32) {
+        if (bpp == 8) {
+            for (int line = 0; line < height; ++line) {
+                uint32_t * destLine = (uint32_t *)dest;
+                const unsigned char * srcLine = data;
+                for (int pixel = 0; pixel < width; ++pixel, destLine++, srcLine++) {
+                    *destLine = srcLine[0] << 24 | srcLine[0] << 16 | srcLine[0] << 8 | 0xff; //rgba
+                }
+                dest += fixedMode.line_length;
+                data += srcLineLength;
             }
-            dest += fixedMode.line_length;
-            data += srcLineLength;
+        }
+        else if (bpp == 24) {
+            for (int line = 0; line < height; ++line) {
+                uint32_t * destLine = (uint32_t *)dest;
+                const unsigned char * srcLine = data;
+                for (int pixel = 0; pixel < width; ++pixel, destLine++, srcLine += 3) {
+                    *destLine = srcLine[3] << 24 | srcLine[2] << 16 | srcLine[1] << 8 | 0xff; //rgba
+                }
+                dest += fixedMode.line_length;
+                data += srcLineLength;
+            }
         }
     }
-    else if (currentMode.bits_per_pixel == 24 && bpp == 32) {
-        for (int line = 0; line < height; ++line) {
-            const uint32_t * srcLine = (uint32_t *)data;
-            unsigned char * destLine = dest;
-            for (int pixel = 0; pixel < width; ++pixel, destLine+=4 , srcLine++) {
-                const uint32_t px = *srcLine;
-                destLine[0] = px >> 24;
-                destLine[1] = px >> 16;
-                destLine[2] = px >> 8;
+    else if (currentMode.bits_per_pixel == 24) {
+        if (bpp == 8) {
+            for (int line = 0; line < height; ++line) {
+                unsigned char * destLine = dest;
+                const unsigned char * srcLine = data;
+                for (int pixel = 0; pixel < width; ++pixel, destLine+=3, srcLine++) {
+                    destLine[0] = *srcLine;
+                    destLine[1] = *srcLine;
+                    destLine[2] = *srcLine;
+                }
+                dest += fixedMode.line_length;
+                data += srcLineLength;
             }
-            dest += fixedMode.line_length;
-            data += srcLineLength;
+        }
+        else if (bpp == 32) {
+            for (int line = 0; line < height; ++line) {
+                unsigned char * destLine = dest;
+                const uint32_t * srcLine = (uint32_t *)data;
+                for (int pixel = 0; pixel < width; ++pixel, destLine+=3, srcLine++) {
+                    const uint32_t px = *srcLine;
+                    destLine[0] = px >> 24;
+                    destLine[1] = px >> 16;
+                    destLine[2] = px >> 8;
+                }
+                dest += fixedMode.line_length;
+                data += srcLineLength;
+            }
         }
     }
 }
