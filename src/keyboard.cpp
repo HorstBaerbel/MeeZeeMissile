@@ -64,7 +64,7 @@ Keyboard::Keyboard(std::string devicePath)
     newTermios.c_lflag &= ~ECHO;
     //newTermios.c_cc[VMIN] = 1;
     //newTermios.c_cc[VTIME] = 0;
-    tcsetattr(0, TCSANOW, &newTermios);
+    //tcsetattr(0, TCSANOW, &newTermios);
     //open keyboard device
     keyboardDescriptor = open(devicePath.c_str(), O_RDONLY | O_NONBLOCK);
     if (keyboardDescriptor > 0) {
@@ -146,7 +146,7 @@ Keyboard::~Keyboard()
 		keyboardDescriptor = 0;
 	}
     //turn on ECHO again
-    tcsetattr(0, TCSAFLUSH/*TCSANOW*/, &oldTermios);
+    //tcsetattr(0, TCSAFLUSH/*TCSANOW*/, &oldTermios);
     //flush streams
     //tcflush(TCIOFLUSH, TCION);
 }

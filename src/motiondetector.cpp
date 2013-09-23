@@ -74,7 +74,7 @@ bool MotionDetector::setupCapture(cv::VideoCapture & captureDevice, uint32_t wid
 			videoFps = newFps;
 		}
 		else {
-			std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to properly set fps!" << ConsoleStyle() << std::endl;
+			std::cout << ConsoleStyle(ConsoleStyle::YELLOW) << "Failed to properly set fps!" << ConsoleStyle() << std::endl;
 			videoFps = fps;
 		}
 		std::cout << ConsoleStyle(ConsoleStyle::GREEN) << "Capturing at " << videoWidth << "x" << videoHeight << "@" << videoBitsPerColor * videoColors << "bpp with " << videoFps << " frames/s now." << ConsoleStyle() << std::endl;
