@@ -15,7 +15,6 @@ int cameraIndex = 0;
 std::string videoFile = "";
 bool drawToFramebuffer = false;
 bool drawUsingOpenCV = false;
-bool armed = true;
 std::shared_ptr<Framebuffer> frameBuffer;
 cv::Mat frame;
 cv::Mat converted;
@@ -34,7 +33,9 @@ void printUsage()
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "Cursor keys" << ConsoleStyle() << " - Control launcher." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "SPACE" << ConsoleStyle() << " - Stop launcher." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "ENTER" << ConsoleStyle() << " - Fire launcher." << std::endl;
-    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "1/0" << ConsoleStyle() << " - Arm/unarm launcher." << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "1" << ConsoleStyle() << " - Arm/unarm launcher." << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "a" << ConsoleStyle() << " - Adaptive/fixed binary threshold." << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "d/f" << ConsoleStyle() << " - De-/increase binary threshold." << std::endl;
     std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "ESC" << ConsoleStyle() << " - Quit program." << std::endl;
 }
 
@@ -160,37 +161,53 @@ int main(int argc, char * argv[])
 	}
 
     //start detection and control loop
-	while (keyboard.isAvailable()) // && motionDetector.isAvailable())
-	{
-		if (keyboard.isKeyDown(1)) {
+	while (keyboard.isAvailable()) { // && motionDetector.isAvailable())
+		if (keyboard.keyWasPressed(1)) {
 			break;
 		}
-		else if (keyboard.isKeyDown(2) && !armed) {
-		    std::cout << "Launcher armed!" << std::endl;
-			armed = true;
+		else if (keyboard.keyWasPressed(2)) {
+		    missileControl.setArmed(!missileControl.isArmed());
+		    if (missileControl.isArmed())
+		        std::cout << "Launcher armed!" << std::endl;
+		    else
+		        std::cout << "Launcher unarmed!" << std::endl;
 		}
-		else if (keyboard.isKeyDown(11) && armed) {
-		    std::cout << "Launcher unarmed!" << std::endl;
-			armed = false;
+		else if (keyboard.keyWasPressed(30)) {
+		    motionDetector.setUseAdaptiveThreshold(!motionDetector.getUseAdaptiveThreshold());
+		    if (motionDetector.getUseAdaptiveThreshold())
+		        std::cout << "Using adaptive threshold." << std::endl;
+		    else
+		        std::cout << "Using fixed threshold of " << motionDetector.getBinaryThreshold() << "." << std::endl;
 		}
-		else if (keyboard.isKeyDown(105)) {
+		else if (keyboard.keyWasPressed(32) && motionDetector.getBinaryThreshold() >= 5.0) {
+		    motionDetector.setBinaryThreshold(motionDetector.getBinaryThreshold() - 5.0);
+		    std::cout << "Binary threshold: " << motionDetector.getBinaryThreshold() << "." << std::endl;
+		}
+		else if (keyboard.keyWasPressed(33) && motionDetector.getBinaryThreshold() <= 250.0) {
+		    motionDetector.setBinaryThreshold(motionDetector.getBinaryThreshold() + 5.0);
+		    std::cout << "Binary threshold: " << motionDetector.getBinaryThreshold() << "." << std::endl;
+		}
+		else if (keyboard.keyWasPressed(105)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::LEFT, 250);
 		}
-		else if (keyboard.isKeyDown(106)) {
+		else if (keyboard.keyWasPressed(106)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::RIGHT, 250);
 		}
-		else if (keyboard.isKeyDown(103)) {
+		else if (keyboard.keyWasPressed(103)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::UP, 250);
 		}
-		else if (keyboard.isKeyDown(108)) {
+		else if (keyboard.keyWasPressed(108)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::DOWN, 250);
 		}
-		else if (keyboard.isKeyDown(57)) {
+		else if (keyboard.keyWasPressed(57)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::STOP);
 		}
-		else if (keyboard.isKeyDown(28)) {
+		else if (keyboard.keyWasPressed(28)) {
 		    missileControl.executeCommand(MissileControl::LauncherCommand::FIRE);
 		}
+		//clear list of pressed keys
+		keyboard.clearPressedKeys();
+		//draw image to framebuffer or OpenCV window
         if (drawToFramebuffer && frameBuffer->isAvailable()) {
             if (motionDetector.getLastFrame(frame, true) && !frame.empty()) {
                 //convert frame to screen depth
@@ -202,22 +219,18 @@ int main(int argc, char * argv[])
         if (drawUsingOpenCV) {
             if (motionDetector.getLastFrame(frame, true) && !frame.empty()) {
                 cv::imshow(OPENCV_WINDOW_NAME, frame);
-                cv::waitKey(10);
+                cv::waitKey(5);
             }
         }
         //check if the missile launcher is directed at the center of the motion
         MotionDetector::MotionInformation motionInfo;
         if (motionDetector.getLastMotion(motionInfo) && motionInfo.motionDetected) {
-            if (motionInfo.distance2 < 30) {
-                if (armed) {
-                    std::cout << "Motion close to target. Shooting!" << std::endl;
-                    missileControl.executeCommand(MissileControl::LauncherCommand::FIRE);
-                }
-                else {
-                    std::cout << "Motion close to target, but unarmed." << std::endl;
-                }
+            if (motionInfo.distance2 < 60) {
+                missileControl.executeCommand(MissileControl::LauncherCommand::FIRE);
+                std::cout << "Motion close to target. Shooting!" << std::endl;
             }
         }
+        //usleep(1 * 1000);
 	}
 
 	return 0;

@@ -16,7 +16,7 @@ MotionDetector::MotionDetector()
 	  thread(0), mutex(PTHREAD_MUTEX_INITIALIZER), active(false), paused(false),
 	  videoWidth(0), videoHeight(0), videoFps(0.0), videoBitsPerColor(0), videoColors(0),
       pollingInterval(0), frameNr(0), framesToIgnore(0), frameChanged(false),
-      useMorphology(false)
+      useMorphology(false), useAdaptiveThreshold(false), binaryThreshold(70.0)
 {
 }
 
@@ -86,7 +86,7 @@ bool MotionDetector::setupCapture(cv::VideoCapture & captureDevice, uint32_t wid
 		//calculate polling interval. It's a bit less than the frame interval, to not skip any frames
 		pollingInterval = 1000.0 / videoFps * 0.9;
 		//calculate the number of frames to ignore before starting detection
-        framesToIgnore = 1.0 * videoFps;
+        framesToIgnore = 3.0 * videoFps;
 		//set up images needed for motion detection
 		const cv::Size imageSize(videoWidth, videoHeight);
 		greyFrame = cv::Mat(imageSize, CV_8U);
@@ -150,6 +150,31 @@ double MotionDetector::getFps() const
 void MotionDetector::setUseMorphology(bool enable)
 {
 	useMorphology = enable;
+}
+
+bool MotionDetector::getUseMorphology() const
+{
+    return useMorphology;
+}
+
+void MotionDetector::setUseAdaptiveThreshold(bool enable)
+{
+    useAdaptiveThreshold = enable;
+}
+
+bool MotionDetector::getUseAdaptiveThreshold() const
+{
+    return useAdaptiveThreshold;
+}
+
+void MotionDetector::setBinaryThreshold(double threshold)
+{
+    binaryThreshold = threshold;
+}
+
+double MotionDetector::getBinaryThreshold() const
+{
+    return binaryThreshold;
 }
 
 bool MotionDetector::getLastMotion(MotionInformation & motionInfo)
@@ -225,13 +250,19 @@ void * MotionDetector::frameLoop(void * obj)
 				}
 				else {
 					//accumulate frames
-					cv::accumulateWeighted(detector->greyFrame, detector->movingAverage, 0.020);
+					cv::accumulateWeighted(detector->greyFrame, detector->movingAverage, 0.050);
 					//convert moving average back to 8bit
 					detector->movingAverage.convertTo(detector->averageGrey, CV_8U);
 					//calculate difference between average and current frame
 					cv::absdiff(detector->averageGrey, detector->greyFrame, detector->difference);
 					//convert to binary image
-					cv::threshold(detector->difference, detector->difference, 70.0, 255.0, CV_THRESH_BINARY);
+					if (detector->useAdaptiveThreshold) {
+					    cv::adaptiveThreshold(detector->difference, detector->difference, 255.0, cv::ADAPTIVE_THRESH_MEAN_C, CV_THRESH_BINARY, 3, -5);
+					}
+					else {
+					    cv::threshold(detector->difference, detector->difference, detector->binaryThreshold, 255.0, CV_THRESH_BINARY);
+					}
+					//detector->difference.convertTo(detector->frame, CV_8U);
 					//use different paths if the user wants to use morphology functions
 					std::vector<std::vector<cv::Point>> contours;
 					std::vector<cv::Vec4i> hierarchy;
@@ -240,14 +271,15 @@ void * MotionDetector::frameLoop(void * obj)
 						//cv::Mat element = cv::getStructuringElement(cv::MORPH_RECT, cv::Size(10, 10));
 						cv::morphologyEx(detector->difference, detector->difference, cv::MORPH_CLOSE, cv::Mat(), cv::Point(-1, -1), 8);
 						//create contours from binary image
-						cv::findContours(detector->difference, contours, hierarchy, CV_RETR_EXTERNAL, CV_CHAIN_APPROX_SIMPLE);
+						cv::findContours(detector->difference, contours, hierarchy, CV_CHAIN_APPROX_TC89_L1, CV_CHAIN_APPROX_SIMPLE);
 					}
 					else {
 						//dilate and erode to get better blobs in the binary image
 						cv::dilate(detector->difference, detector->difference, cv::Mat(), cv::Point(-1, -1), 12);
 						cv::erode(detector->difference, detector->difference, cv::Mat(), cv::Point(-1, -1), 8);
 						//create contours from binary image
-						cv::findContours(detector->difference, contours, hierarchy, CV_RETR_EXTERNAL/*CV_RETR_CCOMP*/, CV_CHAIN_APPROX_SIMPLE);
+						//CV_RETR_EXTERNAL, CV_RETR_CCOMP, CV_CHAIN_APPROX_TC89_L1, CV_CHAIN_APPROX_TC89_KCOS
+						cv::findContours(detector->difference, contours, hierarchy, CV_CHAIN_APPROX_TC89_L1, CV_CHAIN_APPROX_SIMPLE);
 					}
 					//analyze contours and find biggest contour
 					cv::Rect biggestRect;

@@ -12,13 +12,13 @@ public:
 	struct MotionInformation
 	{
 		bool motionDetected;
-		uint32_t x; //!<upper left position
-		uint32_t y; //!<upper left position
-		uint32_t cx; //!<center x
-		uint32_t cy; //!<center y
-		uint32_t w; //!<width
-		uint32_t h; //!<height
-		uint32_t distance2; //!<squared distance of motion center to frame center
+		uint32_t x; //!<upper left position.
+		uint32_t y; //!<upper left position.
+		uint32_t cx; //!<center x.
+		uint32_t cy; //!<center y.
+		uint32_t w; //!<width.
+		uint32_t h; //!<height.
+		uint32_t distance2; //!<squared distance of motion center to frame center.
 
 		MotionInformation()
 			: x(0), y(0), w(0), h(0), cx(0), cy(0), distance2(0), motionDetected(false) {};
@@ -27,31 +27,34 @@ public:
 	};
 
 private:
-	MotionInformation lastMotion; //!<Information of last motion detected or not
-	bool motionChanged; //!<If the motion information has changed from the last getLastMotion() call
+	MotionInformation lastMotion; //!<Information of last motion detected or not.
+	bool motionChanged; //!<If the motion information has changed from the last getLastMotion() call.
 
-	pthread_t thread; //!<frame polling thread
-	pthread_mutex_t mutex; //!<The mutex protecting the lastMotion and motionChanged members
-	bool active; //!<flags to keep the thread running or stop it
+	pthread_t thread; //!<frame polling thread.
+	pthread_mutex_t mutex; //!<The mutex protecting the lastMotion and motionChanged members.
+	bool active; //!<flags to keep the thread running or stop it.
 	bool paused; //!<Flag to pause motion detection loop. No detection will be done till flas is false.
 
-	cv::VideoCapture videoCapture; //!<OpenCV video capture object
-	uint32_t videoWidth; //!<Width of video frames
-	uint32_t videoHeight; //!<Height of video frames
-    uint32_t videoBitsPerColor; //!<Bits per color of video frames
-    uint32_t videoColors; //!<Number of channels in video frame, e.g. 3 for RGB
-	double videoFps; //!<Fps of video capture
-	uint32_t pollingInterval; //!<Time to sleep between polling frames
+	cv::VideoCapture videoCapture; //!<OpenCV video capture object.
+	uint32_t videoWidth; //!<Width of video frames.
+	uint32_t videoHeight; //!<Height of video frames.
+    uint32_t videoBitsPerColor; //!<Bits per color of video frames.
+    uint32_t videoColors; //!<Number of channels in video frame, e.g. 3 for RGB.
+	double videoFps; //!<Fps of video capture.
+	uint32_t pollingInterval; //!<Time to sleep between polling frames.
 	uint32_t frameNr; //!<Nr of frame captured from device.
 	uint32_t framesToIgnore; //!<Nr of frames ignore after starting or unpausing motion detection.
 
-	bool frameChanged; //!<True if the frame has changed from the last getLastFrame() call
-	cv::Mat frame; //!<Last captured frame
-	cv::Mat greyFrame; //!<Captured frame converted to grayscale
-	cv::Mat movingAverage; //!<Moving average of captured frames
-	cv::Mat averageGrey; //!<Moving average as greyscale image
-	cv::Mat difference; //!<difference between average greyscale and current greyscale frame
-	bool useMorphology; //!<Set to true to use OpenCV morphology filter
+	bool frameChanged; //!<True if the frame has changed from the last getLastFrame() call.
+	cv::Mat frame; //!<Last captured frame.
+	cv::Mat greyFrame; //!<Captured frame converted to grayscale.
+	cv::Mat movingAverage; //!<Moving average of captured frames.
+	cv::Mat averageGrey; //!<Moving average as greyscale image.
+	cv::Mat difference; //!<difference between average greyscale and current greyscale frame.
+	
+	bool useMorphology; //!<Set to true to use OpenCV morphology filter.
+	bool useAdaptiveThreshold; //!<Set to true to use adaptive threshold instead of fixed threshold.
+	double binaryThreshold; //!<Threshold when converting greyscale image to binary.
 
 	bool setupCapture(cv::VideoCapture & captureDevice, uint32_t width = 320, uint32_t height = 240, double fps = 20.0);
 
@@ -130,9 +133,24 @@ public:
 
     /*!
     Combine motion areas using OpenCV morphology algorithm.
-    \param[in] enable Pass true to enablealgorothm on next frame.
+    \param[in] enable Pass true to enable algorithm on next frame.
     */
-	void setUseMorphology(bool enable = true);
+	void setUseMorphology(bool enable);
+	bool getUseMorphology() const;
+	
+	/*!
+	Convert greyscale image to binary using adaptive threashold.
+	\param[in] enable Pass true to enable adaptive threshold on next frame.
+	*/
+	void setUseAdaptiveThreshold(bool enable);
+	bool getUseAdaptiveThreshold() const;
+	
+	/*!
+	Set greyscale to binary conversion threshold.
+	\param[in] threshold New threshold for conversion.
+	*/
+	void setBinaryThreshold(double threshold = 70.0);
+	double getBinaryThreshold() const;
 
 	~MotionDetector();
 };
