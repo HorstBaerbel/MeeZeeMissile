@@ -38,6 +38,7 @@ private:
 	
 	LauncherCommand currentCommand; //!<The current command sent to the launcher.
 	int currentRemainingTime; //!<The time remaining till a stop command must be issued.
+	bool armed; //!<If true the launcher is armed and will shoot if a fire command is executed.
 
 	static void * controlLoop(void * obj);
 
@@ -61,6 +62,14 @@ public:
 	\note The minimum duration is the loop delay of about 20ms
 	*/
 	bool executeCommand(LauncherCommand command, int durationMs = INT_MIN);
+	
+	/*!
+	Set the state of the launcher to armed. It will shoot if a FIRE command is executed.
+	\param[in] arm Arm or unarm launcher.
+    */
+	void setArmed(bool arm);
+	bool isArmed() const;
 
 	~MissileControl();
 };
+

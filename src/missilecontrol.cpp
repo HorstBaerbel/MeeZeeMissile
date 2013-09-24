@@ -34,7 +34,7 @@ const uint32_t MissileControl::usbControlTimeout = 500;
 MissileControl::MissileControl()
 	: thread(0), mutex(PTHREAD_MUTEX_INITIALIZER), active(false), 
 	  usbContext(nullptr), usbLauncher(nullptr),
-	  currentCommand(NONE), currentRemainingTime(INT_MIN)
+	  currentCommand(NONE), currentRemainingTime(INT_MIN), armed(true)
 {
 	std::cout << "Initializing missile control..." << std::endl;
 
@@ -169,30 +169,33 @@ void * MissileControl::controlLoop(void * obj)
 				control->currentRemainingTime -= controlInterval;
 			}
 			if (control->currentCommand != lastCommand) {
-			    //copy command sequences to command buffer
-			    uint8_t commandBuffer[64];
-			    memset(commandBuffer, 0, sizeof(commandBuffer));		
-			    memcpy(commandBuffer, sequences[control->currentCommand], 8);
-			    //send command to device
-			    int errnum = 0;
-			    if (control->launcherInfo.model == LAUNCHER_M_S) {
-				    //needed for M&S launchers
-				    if ((errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITA, sizeof(SEQUENCE_INITA), usbControlTimeout) <= 0) ||
-					    (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITB, sizeof(SEQUENCE_INITB), usbControlTimeout) <= 0) ||
-					    (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, commandBuffer, 64, usbControlTimeout) <= 0)) {
-				        //                                                   0x21,                      0x09,               0x02, 0x01
-						    std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
-						    control->currentCommand = NONE;
-						    control->currentRemainingTime = INT_MIN;
-				    }
-			    }
-			    else if (control->launcherInfo.model == LAUNCHER_CHEEKY) {
-				    //sufficient for Dream Cheeky launchers
-				    if (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x00, commandBuffer, 8, usbControlTimeout) <= 0) {
-					    std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
-					    control->currentCommand = NONE;
-					    control->currentRemainingTime = INT_MIN;
-				    }
+			    //if the launcher is not armed, ignore a FIRE command
+			    if (control->currentCommand != FIRE || (control->currentCommand == FIRE && control->armed)) {
+			        //copy command sequences to command buffer
+			        uint8_t commandBuffer[64];
+			        memset(commandBuffer, 0, sizeof(commandBuffer));		
+			        memcpy(commandBuffer, sequences[control->currentCommand], 8);
+			        //send command to device
+			        int errnum = 0;
+			        if (control->launcherInfo.model == LAUNCHER_M_S) {
+				        //needed for M&S launchers
+				        if ((errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITA, sizeof(SEQUENCE_INITA), usbControlTimeout) <= 0) ||
+					        (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, SEQUENCE_INITB, sizeof(SEQUENCE_INITB), usbControlTimeout) <= 0) ||
+					        (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x01, commandBuffer, 64, usbControlTimeout) <= 0)) {
+				            //                                                   0x21,                      0x09,               0x02, 0x01
+						        std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
+						        control->currentCommand = NONE;
+						        control->currentRemainingTime = INT_MIN;
+				        }
+			        }
+			        else if (control->launcherInfo.model == LAUNCHER_CHEEKY) {
+				        //sufficient for Dream Cheeky launchers
+				        if (errnum = libusb_control_transfer(control->usbLauncher, LIBUSB_DT_HID, LIBUSB_REQUEST_SET_CONFIGURATION, LIBUSB_RECIPIENT_ENDPOINT, 0x00, commandBuffer, 8, usbControlTimeout) <= 0) {
+					        std::cout << ConsoleStyle(ConsoleStyle::RED) << "Failed to send command to device. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
+					        control->currentCommand = NONE;
+					        control->currentRemainingTime = INT_MIN;
+				        }
+			        }
 			    }
 			}
 			//if the command was to fire or stop, switch command to NONE
@@ -234,6 +237,16 @@ bool MissileControl::isAvailable() const
 	return (usbContext != nullptr && usbLauncher != nullptr && active);
 }
 
+void MissileControl::setArmed(bool arm)
+{
+    armed = arm;
+}
+
+bool MissileControl::isArmed() const
+{
+    return armed;
+}
+
 MissileControl::~MissileControl()
 {
 	std::cout << "Shutting down missile control." << std::endl;
@@ -252,21 +265,4 @@ MissileControl::~MissileControl()
         usbContext = nullptr;
     }
 }
-          
-/*
-for dream cheeky          
-	memset(data, 0, 8);
-	if (!strcmp(cmd, "up")) {
-		data[0] = 0x01;
-	} else if (!strcmp(cmd, "down")) {
-		data[0] = 0x02;
-	} else if (!strcmp(cmd, "left")) {
-		data[0] = 0x04;
-	} else if (!strcmp(cmd, "right")) {
-		data[0] = 0x08;
-	} else if (!strcmp(cmd, "fire")) {
-		data[0] = 0x10;
-	} else if (strcmp(cmd, "stop")) {
-		fprintf(stderr, "Unknown command: 
-        */
 
