@@ -1,5 +1,6 @@
 #pragma once
 
+#include <map>
 #include <string>
 #include <pthread.h>
 #include <linux/input.h>
@@ -8,16 +9,17 @@
 
 class Keyboard
 {
-	std::string path; //!<linux device path
-	std::string name; //!<device name
+	std::string path; //!<linux device path.
+	std::string name; //!<device name.
 
-    pthread_t thread; //!<key polling thread
-	pthread_mutex_t mutex; //!<The mutex protecting the keyboardState member
-    bool active; //!<flags to keep the thread running or stop it
+    pthread_t thread; //!<key polling thread.
+	pthread_mutex_t mutex; //!<The mutex protecting the keyboardState member.
+    bool active; //!<flags to keep the thread running or stop it.
 
-    int keyboardDescriptor; //!<File descriptor for keyboard device
-    int32_t keyboardState[KEY_CNT]; //!<State of the individual keys in the device
-    termios oldTermios; //!<Old termios state store before turning off echoing
+    int keyboardDescriptor; //!<File descriptor for keyboard device.
+    int32_t keyboardState[KEY_CNT]; //!<State of the individual keys in the device.
+    std::map<int32_t, bool> pressedKeys; //!<List of keys that were pressed since the list was last cleared.
+    termios oldTermios; //!<Old termios state store before turning off echoing.
 
 	static void * keyLoop(void * obj);
 
@@ -36,11 +38,24 @@ public:
 	bool isAvailable() const;
 	
 	/*!
-	Check if key is being pressed atm.
+	Check current state of a key.
 	\param[in] key Scancode of key to check.
-	\return Returns true if keyboard interface is active and key is pressed atm.
+	\return Returns the current state of the key. 0 for released, 1 for pressed, 2 for autorepeat.
 	*/
-    bool isKeyDown(uint32_t key);
+    int32_t getKeyState(uint32_t key);
+    
+    /*!
+    Check if a key was pressed since \clearPressedKeys was called.
+    \param[in] key Scancode of key to check.
+    \return Returns true if the key was pressed.
+    */
+    bool keyWasPressed(uint32_t key);
+    
+    /*!
+    Clear the list of pressed keys.
+    \note Call this in your loop that polls the keys.
+    */
+    void clearPressedKeys();
 
 	~Keyboard();
 };

@@ -106,6 +106,10 @@ void * Keyboard::keyLoop(void * obj)
 				//copy key value to keyboard state array. block mutex before
 				pthread_mutex_lock(&keyboard->mutex);
 				keyboard->keyboardState[inputEvent.code] = inputEvent.value;
+				if (inputEvent.value > 0) {
+				    //add key to list of pressed keys
+				    keyboard->pressedKeys[inputEvent.code] = true;
+				}
 				pthread_mutex_unlock(&keyboard->mutex);
 				//std::cout << "Key " << inputEvent.code << " = " << inputEvent.value << std::endl;
 				//the values are: 0 for released, 1 for pressed, 2 for autorepeat
@@ -121,7 +125,7 @@ bool Keyboard::isAvailable() const
 	return (keyboardDescriptor > 0 && active);
 }
 
-bool Keyboard::isKeyDown(uint32_t key)
+int32_t Keyboard::getKeyState(uint32_t key)
 {
 	bool result = false;
 	//block mutex for member variables
@@ -131,6 +135,27 @@ bool Keyboard::isKeyDown(uint32_t key)
 	}
 	pthread_mutex_unlock(&mutex);
 	return result;
+}
+
+bool Keyboard::keyWasPressed(uint32_t key)
+{
+    bool result = false;
+    //block mutex for member variables
+	pthread_mutex_lock(&mutex);
+	//try to find key in list
+    if (pressedKeys.find(key) != pressedKeys.cend()) {
+        result = true;
+    }
+    pthread_mutex_unlock(&mutex);
+    return result;
+}
+
+void Keyboard::clearPressedKeys()
+{
+    //block mutex for member variables
+	pthread_mutex_lock(&mutex);
+    pressedKeys.clear();
+    pthread_mutex_unlock(&mutex);
 }
 
 Keyboard::~Keyboard()
