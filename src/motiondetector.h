@@ -149,7 +149,7 @@ public:
 	Set greyscale to binary conversion threshold.
 	\param[in] threshold New threshold for conversion.
 	*/
-	void setBinaryThreshold(double threshold = 70.0);
+	void setBinaryThreshold(double threshold = 50.0);
 	double getBinaryThreshold() const;
 
 	~MotionDetector();

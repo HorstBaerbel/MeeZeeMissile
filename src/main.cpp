@@ -111,7 +111,7 @@ bool parseCommandLine(int argc, char * argv[])
 
 int main(int argc, char * argv[])
 {
-    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "MeeZeeMissile v0.8 - Motion detection and USB launcher control." << ConsoleStyle() << std::endl;
+    std::cout << ConsoleStyle(ConsoleStyle::CYAN) << "MeeZeeMissile v0.8.2 - Motion detection and USB launcher control." << ConsoleStyle() << std::endl;
     
     if (!parseCommandLine(argc, argv)) {
         return -1;
@@ -225,7 +225,7 @@ int main(int argc, char * argv[])
         //check if the missile launcher is directed at the center of the motion
         MotionDetector::MotionInformation motionInfo;
         if (motionDetector.getLastMotion(motionInfo) && motionInfo.motionDetected) {
-            if (motionInfo.distance2 < 60) {
+            if (motionInfo.distance2 < (8*8)) {
                 missileControl.executeCommand(MissileControl::LauncherCommand::FIRE);
                 std::cout << "Motion close to target. Shooting!" << std::endl;
             }

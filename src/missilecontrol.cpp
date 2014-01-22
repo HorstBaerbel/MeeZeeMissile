@@ -121,6 +121,13 @@ MissileControl::MissileControl()
                 usbLauncher = nullptr;
                 continue;
             }
+            //now claim interface 1
+            if (errnum = libusb_claim_interface(usbLauncher, 1)) {
+                std::cout << ConsoleStyle(ConsoleStyle::RED) << "Unable to claim device interface 1. Error: " << libusb_error_name(errnum) << "." << ConsoleStyle() << std::endl;
+                libusb_close(usbLauncher);
+                usbLauncher = nullptr;
+                continue;
+            }
             
             //libusb_set_altinterface(launcher, 0); needed?!
 
@@ -144,6 +151,7 @@ MissileControl::MissileControl()
 			thread = 0;
 			active = false;
 			libusb_release_interface(usbLauncher, 0);
+            libusb_release_interface(usbLauncher, 1);
 			libusb_close(usbLauncher);
             usbLauncher = nullptr;
 		}
@@ -258,6 +266,7 @@ MissileControl::~MissileControl()
     if (usbContext) {
         if (usbLauncher != nullptr) {
             libusb_release_interface(usbLauncher, 0);
+            libusb_release_interface(usbLauncher, 1);
             libusb_close(usbLauncher);
             usbLauncher = nullptr;
         }

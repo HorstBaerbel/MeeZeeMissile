@@ -98,6 +98,7 @@ if(DEFINED BCMHOST)
 endif()
 
 LIST(APPEND TARGET_LIBRARIES
+    pthread
     opencv_core
     opencv_imgproc
     opencv_video
